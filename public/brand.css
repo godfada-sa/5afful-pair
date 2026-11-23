@@ -1,0 +1,7 @@
+/* 5AFFUL brand overrides: the mark is a gradient "5" monogram, not the TF glyph.
+   Loaded after the TurboFex stylesheets so nothing else about the page changes. */
+.mark { width: 24px; height: 24px; }
+.mark img, .mark .mf { display: none !important; }
+.mark::after { display: none !important; }
+.mark .b5 { display: block; width: 100%; height: 100%; }
+.logo .wd { font-weight: 650; letter-spacing: -.01em; }
