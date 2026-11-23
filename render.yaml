@@ -9,5 +9,6 @@ services:
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
+      # 22+ can load the ES-module WhatsApp library; the site also works on 20 via dynamic import
       - key: NODE_VERSION
-        value: "20"
+        value: "22"
