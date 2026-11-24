@@ -244,3 +244,26 @@ pre#env { border-color: rgb(var(--cyan) / .25); }
 .foot.min .copy { margin: 0; color: var(--m); font-size: 13px; }
 @media (min-width: 700px) { .pmain { padding: 26px 24px 28px; } .ph { padding-top: 48px; } }
 @media (max-width: 380px) { .pmain { padding: 18px 14px 20px; } .chips .secure .long { display: none; } .chips .secure .short { display: inline; } }
+
+/* --- one or two numbers ---------------------------------------------------- */
+.dsel { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 14px; }
+.dsel .dopt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 11px 13px; border: 1px solid var(--line2); border-radius: var(--rc); background: var(--bg); color: var(--m); text-align: left; cursor: pointer; }
+.dsel .dopt b { color: var(--t); font-size: 15px; font-weight: 500; }
+.dsel .dopt span { font-size: 12.5px; line-height: 1.3; }
+.dsel .dopt.on { border-color: rgb(var(--acc) / .8); background: rgb(var(--acc) / .1); }
+.dsel .dopt.on b { color: rgb(var(--acc)); }
+.dsel .dopt:disabled { opacity: .55; cursor: default; }
+.phone .cpick.ro { cursor: default; pointer-events: none; }
+
+/* --- two session IDs ------------------------------------------------------- */
+.sidlist { display: grid; gap: 10px; margin-top: 4px; }
+.sidrow { display: grid; gap: 6px; }
+.sidrow .who { color: var(--m); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+.sidrow .sid { margin-top: 0; padding: 14px 8px; font-size: clamp(15px, 4.4vw, 20px); }
+
+/* --- the index.js download ------------------------------------------------- */
+a.cta { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 52px; margin-top: 16px; padding: 0 18px; border: 1px solid var(--btn); border-radius: var(--rc); background: var(--btn); color: #fff; box-shadow: inset 0 1px 0 rgb(var(--w) / .18); font-size: 16px; font-weight: 500; text-decoration: none; cursor: pointer; }
+a.cta:hover { background: var(--btn2); }
+a.cta svg { width: 20px; height: 20px; }
+a.cta[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+.dlhint { margin-top: 6px; }

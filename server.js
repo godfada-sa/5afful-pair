@@ -1,8 +1,11 @@
 // Self-hosted pairing site.
 //
-//   POST /api/pair                { method: "code" | "qr", number }  -> { job }
+//   POST /api/pair                { method: "code" | "qr", number, number2, devices }  -> { job, batch }
 //   GET  /api/job/<job>          -> state, code, qr, secondsLeft, sessionId, idSecondsLeft, downloads...
-//   POST /api/cancel/<job>       -> { ok: true }
+//   GET  /api/batch/<batch>      -> every number in the attempt, and the session IDs once all are linked
+//   POST /api/batch/<batch>/retry -> start the number that failed again (the linked ones are kept)
+//   GET  /api/bundle/<batch>/index.js -> the installable index.js with the session IDs inside it
+//   POST /api/cancel/<job|batch> -> { ok: true }
 //   GET  /api/session/<ID>       -> the creds object itself, repeatedly, for 5 minutes
 //   GET  /healthz                -> { ok: true }   (cheap, for uptime pings)
 //
@@ -15,6 +18,8 @@ const fs = require('fs');
 const path = require('path');
 const { Vault, canonical } = require('./lib/vault');
 const { PairingSite } = require('./lib/pairing');
+const { Batcher } = require('./lib/batch');
+const { renderIndex, FILENAME } = require('./lib/index-template');
 const { whatsappConnector } = require('./lib/connector');
 
 const PUBLIC = path.join(__dirname, 'public');
@@ -96,6 +101,7 @@ const mask = (id) => (id ? `${id.slice(0, 8)}…` : '-');
 function createServer({ connector = whatsappConnector, log = console.log, sessionTtlMs = 5 * 60 * 1000 } = {}) {
   const vault = new Vault({ ttlMs: sessionTtlMs });
   const site = new PairingSite({ vault, connector, log });
+  const batcher = new Batcher({ site, vault, log });
   const pairHits = new Map();
   const sessionHits = new Map();
 
@@ -154,18 +160,32 @@ function createServer({ connector = whatsappConnector, log = console.log, sessio
           return sendJson(res, 400, { error: 'Send a JSON body.' });
         }
         const method = body.method === 'qr' ? 'qr' : 'code';
+        const devices = body.devices === 2 || body.devices === '2' ? 2 : 1;
         const number = String(body.number || '').replace(/\D/g, '');
+        const number2 = String(body.number2 || '').replace(/\D/g, '');
         if (method === 'code' && !/^\d{8,15}$/.test(number)) {
           return sendJson(res, 400, { error: 'Enter the number with its country code, digits only (8 to 15 digits).' });
         }
-        if (site.jobs.size >= MAX_JOBS) {
+        if (devices === 2 && method === 'code' && !/^\d{8,15}$/.test(number2)) {
+          return sendJson(res, 400, { error: 'Enter the second number with its country code, digits only (8 to 15 digits).' });
+        }
+        if (devices === 2 && number2 && number2 === number) {
+          return sendJson(res, 400, { error: 'That is the same number twice. Use a different number for the second one.' });
+        }
+        if (site.jobs.size + batcher.size >= MAX_JOBS) {
           return sendJson(res, 503, { error: 'The site is busy. Wait a minute and try again.' });
         }
         if (limited(pairHits, address, PAIR_LIMIT, PAIR_WINDOW)) {
           return sendJson(res, 429, { error: 'Too many attempts from this connection. Wait a few minutes.' });
         }
-        const job = await site.start({ method, number });
-        return sendJson(res, 200, { job: job.id });
+        const numbers = devices === 2 ? [number, number2] : [number];
+        const batch = await batcher.create({ method, numbers, devices });
+        const first = batch.slots[0];
+        return sendJson(res, 200, {
+          job: first && first.jobId ? first.jobId : null,
+          batch: batch.id,
+          devices,
+        });
       }
 
       const jobMatch = pathname.match(/^\/api\/job\/([A-Za-z0-9_-]{4,64})$/);
@@ -175,9 +195,49 @@ function createServer({ connector = whatsappConnector, log = console.log, sessio
         return sendJson(res, 200, site.status(job));
       }
 
+      // every number of one attempt, in order, plus the IDs once they are all linked
+      const batchMatch = pathname.match(/^\/api\/batch\/([A-Za-z0-9_-]{4,64})(\/retry)?$/);
+      if (batchMatch && !batchMatch[2] && (req.method === 'GET' || req.method === 'HEAD')) {
+        const status = batcher.status(batchMatch[1]);
+        if (!status) return sendJson(res, 404, {});
+        return sendJson(res, 200, status);
+      }
+      if (batchMatch && batchMatch[2] && req.method === 'POST') {
+        const status = await batcher.retry(batchMatch[1]);
+        if (!status) return sendJson(res, 404, {});
+        return sendJson(res, 200, status);
+      }
+
+      // the installable file: the bot's own index.js with the session IDs inside
+      const bundleMatch = pathname.match(/^\/api\/bundle\/([A-Za-z0-9_-]{4,64})\/index\.js$/);
+      if (bundleMatch && (req.method === 'GET' || req.method === 'HEAD')) {
+        if (limited(sessionHits, address, SESSION_LIMIT, SESSION_WINDOW)) {
+          return sendJson(res, 429, { error: 'Too many requests. Try again shortly.' });
+        }
+        const batch = batcher.get(bundleMatch[1]);
+        const ready = batch ? batch.bundle() : null;
+        if (!ready) return sendJson(res, 404, { error: 'link the number(s) first: there is no index.js for that attempt yet' });
+        let body = '';
+        try {
+          body = renderIndex({ ids: ready.ids });
+        } catch (err) {
+          log(`[pair] bundle error: ${err.message}`);
+          return sendJson(res, 500, { error: 'The file could not be built. Link the number again.' });
+        }
+        log(`[pair] index.js downloaded (${ready.ids.length} ID${ready.ids.length === 1 ? '' : 's'})`);
+        res.writeHead(200, {
+          'Content-Type': 'text/javascript; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${FILENAME}"`,
+          'Cache-Control': 'no-store',
+          'Content-Length': Buffer.byteLength(body),
+        });
+        if (req.method === 'HEAD') return res.end();
+        return res.end(body);
+      }
+
       const cancelMatch = pathname.match(/^\/api\/cancel\/([A-Za-z0-9_-]{4,64})$/);
       if (cancelMatch && req.method === 'POST') {
-        site.cancel(cancelMatch[1]);
+        if (!site.cancel(cancelMatch[1])) batcher.cancel(cancelMatch[1]);
         return sendJson(res, 200, { ok: true });
       }
 
@@ -218,9 +278,10 @@ function createServer({ connector = whatsappConnector, log = console.log, sessio
 
   server.on('close', () => {
     clearInterval(janitor);
+    batcher.stop();
     site.stop();
   });
-  return { server, site, vault };
+  return { server, site, vault, batcher };
 }
 
 // exposed for the brief's acceptance check: unknown/malformed IDs are 404, not 400

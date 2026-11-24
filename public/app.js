@@ -4,6 +4,7 @@
   var MAX_SECONDS = 240;
   var job = null, poll = null, method = 'code', dmPolls = 0, lastCode = '';
   var submitting = false, checking = false, reqId = 0, lastNumber = '';
+  var batch = null, devices = 1, lastNumber2 = '', ids = [];
   var snd = function (n) { if (window.tfxSound) window.tfxSound.play(n); };
   var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   // lets :active (the press effect) work on iPhone Safari
@@ -140,7 +141,7 @@
   // an unfinished attempt survives a refresh: only the attempt number is kept in this tab (never the session ID itself,
   // which the server hands out again while it is still valid)
   var JOBKEY = 'tfx-job', restoring = false;
-  function saveJob() { try { sessionStorage.setItem(JOBKEY, JSON.stringify({ job: job, method: method })); } catch (e) { /* fine */ } }
+  function saveJob() { try { sessionStorage.setItem(JOBKEY, JSON.stringify({ job: job, batch: batch, method: method, devices: devices })); } catch (e) { /* fine */ } }
   function clearJob() { try { sessionStorage.removeItem(JOBKEY); } catch (e) { /* fine */ } }
   function setText(el, msg) { el.textContent = msg || ''; el.hidden = !msg; }
   function stop() { if (poll) clearInterval(poll); poll = null; }
@@ -150,13 +151,22 @@
   function fmtLeft(s) { return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
   function idStop() { if (idTimer) clearInterval(idTimer); idTimer = null; idEnd = 0; }
   function idExpired() {
-    idStop(); clearJob();
+    idStop(); clearJob(); stop();
     $('idtimer').textContent = 'This session ID has expired. Link again to get a new one.';
     $('idtimer').classList.add('gone');
-    $('sid').classList.add('expired'); $('sid').setAttribute('aria-disabled', 'true'); $('sid').tabIndex = -1;
-    $('sid').textContent = 'Expired';
-    $('env').textContent = 'SESSION_ID=(expired)';
+    if (ids.length > 1) {
+      [].forEach.call($('sidlist').querySelectorAll('.sid'), function (box) {
+        box.classList.add('expired'); box.setAttribute('aria-disabled', 'true'); box.tabIndex = -1; box.textContent = 'Expired';
+      });
+      $('env').textContent = ids.map(function (id, k) { return (k === 0 ? 'SESSION_ID=' : 'account2=') + '(expired)'; }).join('\n');
+    } else {
+      $('sid').classList.add('expired'); $('sid').setAttribute('aria-disabled', 'true'); $('sid').tabIndex = -1;
+      $('sid').textContent = 'Expired';
+      $('env').textContent = 'SESSION_ID=(expired)';
+    }
     $('copy').disabled = true; $('copyenv').disabled = true;
+    $('dl').hidden = true; $('dl').removeAttribute('href');
+    $('dlwait').hidden = false; $('dlwait').textContent = 'This index.js has expired. Link again to get a new one.';
   }
   // the bot has logged in with this session ID: say so instead of "expired"
   function idUsed() {
@@ -263,8 +273,10 @@
     var c = P.byIso(code); iso = c ? c.iso : '';
     $('cflag').textContent = c ? P.flag(c.iso) : '🌍';
     $('cdial').textContent = c ? '+' + c.dial : '+';
+    $('cflag2').textContent = c ? P.flag(c.iso) : '🌍';
+    $('cdial2').textContent = c ? '+' + c.dial : '+';
     $('cpick').setAttribute('aria-label', c ? 'Country: ' + c.name + ' +' + c.dial + '. Change' : 'Choose country');
-    if (!silent) showCount();
+    if (!silent) { showCount(); showCount2(); }
   }
   function lengthText(c) { return c.min === c.max ? c.min + ' digits' : c.min + '–' + c.max + ' digits'; }
   // live state while typing: how many digits are still needed, and whether the number is valid for the country
@@ -302,6 +314,55 @@
     else if (a.state !== 'valid') msg = a.message || 'That number is not valid for the selected country.';
     if (msg) { setText($('numerr'), msg); num.setAttribute('aria-invalid', 'true'); num.focus(); return null; }
     lastCountry = a.iso;
+    return a.e164;
+  }
+
+  // ---------- one number or two ----------
+  var num2 = $('number2');
+  function setDevices(n, silent) {
+    devices = n === 2 ? 2 : 1;
+    [].forEach.call(document.querySelectorAll('#dsel .dopt'), function (b) {
+      var on = Number(b.getAttribute('data-n')) === devices;
+      b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    var box = $('numwrap2');
+    box.classList.toggle('off', devices !== 2);
+    if (devices === 2) { box.removeAttribute('inert'); box.removeAttribute('aria-hidden'); }
+    else { box.setAttribute('inert', ''); box.setAttribute('aria-hidden', 'true'); }
+    if (!silent) { setText($('numerr2'), ''); showCount2(); }
+  }
+  [].forEach.call(document.querySelectorAll('#dsel .dopt'), function (b) {
+    b.addEventListener('click', function () { if (submitting) return; snd('tap'); setDevices(Number(b.getAttribute('data-n'))); });
+  });
+  // the second number uses the same country as the first: one picker, two fields
+  function showCount2() {
+    var box = $('phone2'), hint = $('numhint2'), c = P.byIso(iso), a = P.analyze(num2.value, iso);
+    box.classList.remove('bad', 'good'); hint.classList.remove('ok', 'bad');
+    if (!c) { hint.textContent = 'Choose the country for the first number first.'; return a; }
+    if (a.state === 'empty') hint.textContent = 'The second ' + c.name + ' number, without +' + c.dial + ' (' + lengthText(c) + ').';
+    else if (a.state === 'incomplete') hint.textContent = a.national.length + ' digit' + (a.national.length === 1 ? '' : 's') + ' · ' + a.remaining + ' more needed.';
+    else if (a.state === 'toolong' || a.state === 'invalid') { hint.textContent = a.message; hint.classList.add('bad'); box.classList.add('bad'); }
+    else { hint.textContent = '✓ Valid ' + c.name + ' number: +' + a.e164; hint.classList.add('ok'); box.classList.add('good'); }
+    return a;
+  }
+  num2.addEventListener('input', function () {
+    num2.value = num2.value.replace(/[^\d\s()+.\-]/g, '');
+    var guard = 0;
+    while (guard++ < 40 && num2.value && P.analyze(num2.value, iso).state === 'toolong') num2.value = num2.value.slice(0, -1).replace(/[\s().\-]+$/, '');
+    var a = showCount2();
+    if (/^\s*(\+|00)/.test(num2.value) && a.national && P.byIso(iso) && (a.state === 'valid' || a.state === 'incomplete')) {
+      num2.value = a.national.replace(/(\d{3})(?=\d)/g, '$1 ').replace(/ (\d{1,2})$/, '$1');
+      a = showCount2();
+    }
+    if (a.state === 'valid' || a.state === 'incomplete' || a.state === 'empty') { setText($('numerr2'), ''); num2.removeAttribute('aria-invalid'); }
+  });
+  function validNumber2() {
+    var a = P.analyze(num2.value, iso), msg = '';
+    if (!iso && a.state !== 'valid') msg = 'Choose the country for the first number first.';
+    else if (a.state === 'empty') msg = 'Enter the second WhatsApp number, or choose 1 number.';
+    else if (a.state === 'incomplete') msg = 'That second number is too short for ' + (P.byIso(a.iso) || { name: 'this country' }).name + ': ' + a.remaining + ' more digit' + (a.remaining === 1 ? '' : 's') + ' needed.';
+    else if (a.state !== 'valid') msg = a.message || 'That second number is not valid for the selected country.';
+    if (msg) { setText($('numerr2'), msg); num2.setAttribute('aria-invalid', 'true'); num2.focus(); return null; }
     return a.e164;
   }
   // country picker (a searchable sheet)
@@ -351,21 +412,25 @@
   function reset() {
     $('connect').classList.remove('ldb', 'ldx');
     stop(); idStop(); clearJob(); restoring = false; slowPoll = false; islandReset();
-    $('step-done').classList.remove('used'); $('usedmsg').hidden = true; $('idtimer').classList.remove('used'); job = null; lastCode = ''; dmPolls = 0; submitting = false; reqId++; checking = false;
-    renderCode(''); $('code').hidden = false; $('codemsg').hidden = true; $('qrmsg').hidden = true; $('retry').hidden = true; $('retry').disabled = false; $('status').parentNode.classList.remove('done');
+    $('step-done').classList.remove('used'); $('usedmsg').hidden = true; $('idtimer').classList.remove('used'); job = null; batch = null; ids = []; lastCode = ''; dmPolls = 0; submitting = false; reqId++; checking = false;
+    renderCode(''); $('code').hidden = false; $('codemsg').hidden = true; $('qrmsg').hidden = true; $('retry').hidden = true; $('retry').disabled = false; $('retry-text').textContent = 'Try again'; $('status').parentNode.classList.remove('done');
     $('qrimg').hidden = true; $('qrimg').removeAttribute('src'); $('qrskel').hidden = false;
     $('copycode').disabled = true;
     $('prog').style.width = '100%'; $('timer').hidden = true;
-    setText($('err1'), ''); setText($('err2'), '');
+    setText($('err1'), ''); setText($('err2'), ''); setText($('numerr2'), ''); num2.removeAttribute('aria-invalid');
+    $('phone2').classList.remove('bad', 'good'); $('numhint2').classList.remove('ok', 'bad'); showCount2();
     busy(false);
-    $('sid').classList.remove('expired'); $('sid').removeAttribute('aria-disabled'); $('sid').tabIndex = 0;
-    $('copy').disabled = false; $('copyenv').disabled = false; $('idtimer').textContent = ''; $('idtimer').classList.remove('gone', 'low');
+    $('sid').hidden = false; $('sid').classList.remove('expired'); $('sid').removeAttribute('aria-disabled'); $('sid').tabIndex = 0;
+    $('sidlist').hidden = true; $('sidlist').innerHTML = ''; $('sidlist').removeAttribute('data-ids');
+    $('copy').hidden = false; $('copy').disabled = false; $('copyenv').disabled = false; $('idtimer').textContent = ''; $('idtimer').classList.remove('gone', 'low');
+    $('dl').hidden = true; $('dl').removeAttribute('href'); $('dlwait').hidden = false; $('dlwait').textContent = 'Building your index.js…';
     show('step-number');
   }
   function busy(on) {
     var b = $('go'); b.classList.toggle('busy', on); b.setAttribute('aria-busy', on ? 'true' : 'false'); b.disabled = on;
     $('connect').classList.toggle('ldb', on); if (on) $('connect').classList.remove('ldx');   // the phone and 5AFFUL picture shows "connecting" while the request runs
-    tabs.classList.toggle('locked', on); $('number').readOnly = on; $('cpick').disabled = on;
+    tabs.classList.toggle('locked', on); $('number').readOnly = on; $('number2').readOnly = on; $('cpick').disabled = on;
+    [].forEach.call(document.querySelectorAll('#dsel .dopt'), function (o) { o.disabled = on; });
   }
   function idleLabel() { swapText($('go-text'), method === 'code' ? 'Generate pairing code' : 'Show QR code'); }
   function failSubmit(msg) {
@@ -382,17 +447,23 @@
     setText($('err1'), '');
     var number = '';
     if (method === 'code') { number = validNumber(); if (!number) { flash($('go'), 'shake', 500); return; } }
-    submitting = true; var mine = ++reqId, sent = method; lastNumber = number;
+    var number2 = '';
+    if (method === 'code' && devices === 2) {
+      number2 = validNumber2();
+      if (!number2) { flash($('go'), 'shake', 500); return; }
+      if (number2 === number) { setText($('numerr2'), 'That is the same number twice. Use a different number for the second one.'); num2.setAttribute('aria-invalid', 'true'); num2.focus(); flash($('go'), 'shake', 500); return; }
+    }
+    submitting = true; var mine = ++reqId, sent = method; lastNumber = number; lastNumber2 = number2;
     busy(true);
     snd('press'); islLock = false; islandSet('working', 'Connecting…');
     swapText($('go-text'), sent === 'code' ? 'Generating…' : 'Preparing…');
-    TFLoad.fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method: sent, number: number, country: lastCountry }) }, 25000)
+    TFLoad.fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method: sent, number: number, number2: number2, devices: devices, country: lastCountry }) }, 25000)
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }, function () { return { ok: false, j: {} }; }); })
       .then(function (x) {
         if (mine !== reqId) return;
         if (!x.ok) return failSubmit(x.j.error || 'Something went wrong. Please try again.');
         submitting = false;
-        job = x.j.job; dmPolls = 0; saveJob();
+        job = x.j.job; batch = x.j.batch || null; dmPolls = 0; saveJob();
         $('pane-code').hidden = method !== 'code'; $('pane-qr').hidden = method !== 'qr';
         $('status').textContent = method === 'code' ? 'Requesting your pairing code…' : 'Preparing your QR code…';
         renderCode(''); $('qrimg').hidden = true; $('qrskel').hidden = false;
@@ -418,91 +489,199 @@
     setText($('err2'), msg || '');
     islandSet('bad', 'Linking failed'); $('connect').classList.remove('ldb'); $('connect').classList.add('ldx');
   }
-  // "Try again": drop the old attempt and ask for a new code / QR right here (same number, same screen)
+  // "Try again": drop the old attempt and ask for a new code / QR right here (same number, same screen).
+  // With two numbers it only starts the number that failed again: the one already linked keeps its login.
   function retry() {
     if (submitting) return;
-    var old = job; stop(); clearJob(); job = null; lastCode = ''; checking = false; submitting = true; var mine = ++reqId, sent = method;
-    if (old) fetch('/api/cancel/' + old, { method: 'POST' }).catch(function () {});
+    stop(); var old = batch; submitting = true; var mine = ++reqId, sent = method;
     snd('press'); islLock = false; islandSet('working', 'Connecting…'); $('connect').classList.remove('ldx');
     $('status').parentNode.classList.remove('done'); $('retry').disabled = true; $('retry-text').textContent = 'Getting a new one…';
     setText($('err2'), ''); $('codemsg').hidden = true; $('qrmsg').hidden = true; $('code').hidden = false; $('retry').classList.remove('main');
-    renderCode(''); $('copycode').disabled = true; $('qrimg').hidden = true; $('qrimg').removeAttribute('src'); $('qrskel').hidden = false;
+    renderCode(''); lastCode = ''; $('copycode').disabled = true; $('qrimg').hidden = true; $('qrimg').removeAttribute('src'); $('qrskel').hidden = false;
     $('prog').style.width = '100%'; $('timer').hidden = true;
     $('status').textContent = sent === 'code' ? 'Requesting a new pairing code…' : 'Preparing a new QR code…';
-    TFLoad.fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method: sent, number: lastNumber, country: lastCountry }) }, 25000)
-      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }, function () { return { ok: false, j: {} }; }); })
-      .then(function (x) {
+
+    var done = function (x) {
+      if (mine !== reqId) return;
+      submitting = false; $('retry').disabled = false; $('retry-text').textContent = 'Try again';
+      if (!x.ok) { ended((x.j && x.j.error) || 'Something went wrong. Please try again.'); return; }
+      $('retry').hidden = true; slowPoll = false;
+      poll = setInterval(check, 2000); check();
+    };
+    var failed = function (e) {
+      if (mine !== reqId) return;
+      submitting = false; $('retry').disabled = false; $('retry-text').textContent = 'Try again';
+      ended(e && e.timeout ? 'The site is taking too long to answer. Please try again.' : 'Could not reach the site. Check your internet connection and try again.');
+    };
+    var read = function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }, function () { return { ok: false, j: {} }; }); };
+
+    if (old) {
+      fetch('/api/batch/' + old + '/retry', { method: 'POST' }).then(read).then(done, failed);
+      return;
+    }
+    if (job) fetch('/api/cancel/' + job, { method: 'POST' }).catch(function () {});
+    clearJob(); job = null; checking = false;
+    TFLoad.fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method: sent, number: lastNumber, number2: lastNumber2, devices: devices, country: lastCountry }) }, 25000)
+      .then(read).then(function (x) {
         if (mine !== reqId) return;
-        submitting = false;
-        $('retry-text').textContent = 'Try again';
-        if (!x.ok) { ended(x.j.error || 'Something went wrong. Please try again.'); return; }
-        job = x.j.job; dmPolls = 0; saveJob(); $('retry').hidden = true;
-        poll = setInterval(check, 2000); check();
-      })
-      .catch(function (e) { if (mine === reqId) { submitting = false; $('retry-text').textContent = 'Try again'; ended(e && e.timeout ? 'The site is taking too long to answer. Please try again.' : 'Could not reach the site. Check your internet connection and try again.'); } });
+        if (x.ok) { job = x.j.job; batch = x.j.batch || null; dmPolls = 0; saveJob(); }
+        done(x);
+      }, failed);
   }
   $('retry').addEventListener('click', retry);
 
   // ---------- progress ----------
+  function pollUrl() { return batch ? '/api/batch/' + batch : '/api/job/' + job; }
+
+  // a batch answers with slots; an attempt started before this page was updated
+  // only has the old single-job answer. Both become the same shape here.
+  function normalize(x) {
+    if (!x || !x.state) return x || null;
+    if (x.slots) return x;
+    var slot = { index: 0, number: lastNumber, state: x.state };
+    ['code', 'qr', 'note', 'error', 'secondsLeft', 'dm'].forEach(function (k) { if (x[k] != null) slot[k] = x[k]; });
+    if (x.state === 'linked') slot.sessionId = x.sessionId;
+    return {
+      state: x.state, devices: 1, slot: 0, slots: [slot],
+      sessionIds: x.state === 'linked' && x.sessionId ? [x.sessionId] : [],
+      idSecondsLeft: x.idSecondsLeft, expired: x.expired, dm: x.dm, error: x.error
+    };
+  }
+
   function check() {
-    if (!job || checking) return;
-    checking = true; var mine = job;
-    fetch('/api/job/' + job).then(function (r) { return r.json(); }).then(function (j) {
+    if ((!job && !batch) || checking) return;
+    checking = true; var mine = batch || job;
+    fetch(pollUrl()).then(function (r) { return r.json(); }).then(function (raw) {
       checking = false;
-      if (!job || job !== mine) return;
-      if (!j.state) { stop(); if (restoring) { restoring = false; return reset(); } clearJob(); return ended(j.error || 'This attempt is no longer available.'); }
-
-      restoring = false;
-      if ((j.state === 'code' || j.state === 'linking') && j.code && j.code !== lastCode) { lastCode = j.code; renderCode(j.code); $('copycode').disabled = false; }
-      if (j.state === 'qr' && j.qr) {
-        if ($('qrimg').getAttribute('src') !== j.qr) $('qrimg').src = j.qr;
-        $('qrimg').hidden = false; $('qrskel').hidden = true;
-      }
-
-      $('retry').hidden = !(j.state === 'code' || j.state === 'qr');
-      if (j.state === 'starting') islandSet('working', method === 'code' ? 'Requesting your code…' : 'Preparing your QR…');
-      if (j.state === 'code') islandSet('working', 'Enter the code in WhatsApp');
-      if (j.state === 'qr') islandSet('working', 'Scan the QR code');
-      if (j.state === 'linking') islandSet('working', 'Linking your account…');
-      if (j.state === 'linked') islandSet('ok', 'Linked successfully');
-      if (j.state === 'failed') islandSet('bad', 'Linking failed');
-      if (j.state === 'starting') $('status').textContent = method === 'code' ? 'Requesting your pairing code…' : 'Preparing your QR code…';
-      if (j.state === 'code') $('status').textContent = 'Waiting for you to enter the code in WhatsApp…';
-      if (j.state === 'qr') $('status').textContent = 'Waiting for you to scan the QR code…';
-      if (j.state === 'linking') { $('status').textContent = 'Accepted. Finishing the link — keep WhatsApp open…'; $('qrimg').hidden = true; $('qrskel').hidden = false; }
-
-      if (j.state === 'starting' || j.state === 'code' || j.state === 'qr' || j.state === 'linking') {
-        var left = Math.max(0, j.secondsLeft);
-        $('prog').style.width = Math.min(100, (left / MAX_SECONDS) * 100) + '%';
-        $('timer').hidden = false;
-        $('timer').textContent = 'This attempt expires in ' + Math.floor(left / 60) + ':' + ('0' + (left % 60)).slice(-2);
-      } else if (j.state === 'linked' && j.used) {
-        if ($('step-done').hidden) show('step-done');
-        idUsed();
-      } else if (j.state === 'linked' && j.expired) {
+      if ((batch || job) !== mine) return;
+      var b = normalize(raw);
+      if (!b || !b.state) {
         stop();
-        if ($('step-done').hidden) show('step-done');
-        idExpired();
-      } else if (j.state === 'linked') {
-        if (!idTimer) { $('sid').textContent = j.sessionId; $('env').textContent = 'SESSION_ID=' + j.sessionId; }
-        if ($('step-done').hidden) show('step-done');
-        idStart(j.idSecondsLeft);
-        dmNote(j.dm);
-        dmPolls++;
-        if ((j.dm !== null || dmPolls > 12) && !slowPoll) { if (j.dm === null) dmNote(false); stop(); slowPoll = true; poll = setInterval(check, 4000); }   // keep watching (more slowly) for the bot using the ID
-      } else if (j.state === 'failed') {
-        stop(); clearJob();
-        ended(j.error);
+        if (restoring) { restoring = false; return reset(); }
+        clearJob(); return ended(raw && raw.error ? raw.error : 'This attempt is no longer available.');
       }
+      restoring = false;
+      paint(b);
     }).catch(function () { checking = false; /* keep trying */ });
   }
+
+  function paint(b) {
+    var slots = b.slots || [];
+    var active = slots[b.slot] || slots[0] || { state: b.state };
+    var two = (b.devices || 1) > 1;
+    var linked = 0;
+    for (var i = 0; i < slots.length; i++) if (slots[i].state === 'linked') linked++;
+
+    if ((active.state === 'code' || active.state === 'linking') && active.code && active.code !== lastCode) {
+      lastCode = active.code; renderCode(active.code); $('copycode').disabled = false;
+    }
+    if (active.state === 'qr' && active.qr) {
+      if ($('qrimg').getAttribute('src') !== active.qr) $('qrimg').src = active.qr;
+      $('qrimg').hidden = false; $('qrskel').hidden = true;
+    }
+
+    $('retry').hidden = !(active.state === 'code' || active.state === 'qr' || b.state === 'failed');
+
+    if (b.state === 'ready') { if ($('step-done').hidden) show('step-done'); paintDone(b); return; }
+
+    if (b.state === 'failed') {
+      stop();
+      if (two && linked === 1) {                 // number 1 is in, only number 2 failed: keep the screen
+        setText($('err2'), b.error || '');
+        $('status').textContent = 'Number 1 is linked. Number 2 failed — press Try again.';
+        $('status').parentNode.classList.add('done');
+        $('retry').hidden = false; $('retry').classList.add('main'); $('retry-text').textContent = 'Try again — number 2';
+        $('timer').hidden = true; $('prog').style.width = '0%';
+        islandSet('bad', 'Number 2 failed'); $('connect').classList.remove('ldb'); $('connect').classList.add('ldx');
+        return;
+      }
+      clearJob();
+      return ended(b.error);
+    }
+
+    var n = (b.slot || 0) + 1;
+    var who = two ? (linked === 1 ? 'Number 1 linked ✓ · Number 2 of 2 — ' : 'Number ' + n + ' of 2 — ') : '';
+    var text = {
+      starting: method === 'code' ? 'Requesting your pairing code…' : 'Preparing your QR code…',
+      code: 'Waiting for you to enter the code in WhatsApp…',
+      qr: 'Waiting for you to scan the QR code…',
+      linking: 'Accepted. Finishing the link — keep WhatsApp open…'
+    };
+    if (text[b.state]) $('status').textContent = who + text[b.state];
+    $('status').parentNode.classList.remove('done');
+    setText($('err2'), '');
+    $('retry').classList.remove('main');
+    if (!two) $('retry-text').textContent = 'Try again';
+    if (b.state === 'linking') { $('qrimg').hidden = true; $('qrskel').hidden = false; }
+
+    if (b.state === 'starting') islandSet('working', two ? 'Connecting number ' + n + '…' : (method === 'code' ? 'Requesting your code…' : 'Preparing your QR…'));
+    if (b.state === 'code') islandSet('working', 'Enter the code in WhatsApp');
+    if (b.state === 'qr') islandSet('working', 'Scan the QR code');
+    if (b.state === 'linking') islandSet('working', 'Linking your account…');
+
+    var left = typeof active.secondsLeft === 'number' ? Math.max(0, active.secondsLeft) : 0;
+    $('prog').style.width = Math.min(100, (left / MAX_SECONDS) * 100) + '%';
+    $('timer').hidden = false;
+    $('timer').textContent = 'This attempt expires in ' + Math.floor(left / 60) + ':' + ('0' + (left % 60)).slice(-2);
+  }
+
+  // the IDs and the index.js that already has them inside it
+  function paintDone(b) {
+    ids = (b.sessionIds || []).slice(0, 2);
+    if (b.expired || !ids.length) { idExpired(); return; }
+
+    if (ids.length > 1) {
+      $('sid').hidden = true; $('sidlist').hidden = false; $('copy').hidden = true;
+      if ($('sidlist').getAttribute('data-ids') !== ids.join(',')) {
+        $('sidlist').setAttribute('data-ids', ids.join(','));
+        $('sidlist').innerHTML = '';
+        ids.forEach(function (id, k) {
+          var row = document.createElement('div'); row.className = 'sidrow';
+          var who = document.createElement('span'); who.className = 'who';
+          who.textContent = k === 0 ? 'Main bot — number 1' : 'Second bot — number 2';
+          var box = document.createElement('div'); box.className = 'sid';
+          box.setAttribute('role', 'button'); box.tabIndex = 0; box.textContent = id;
+          box.setAttribute('aria-label', 'Session ID ' + (k + 1) + '. Tap to copy');
+          box.addEventListener('click', function () { copy(id, box, box); flash(box, 'done', 1200); });
+          box.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); box.click(); } });
+          row.appendChild(who); row.appendChild(box); $('sidlist').appendChild(row);
+        });
+      }
+      $('env').textContent = ids.map(function (id, k) { return (k === 0 ? 'SESSION_ID=' : 'account2=') + id; }).join('\n');
+    } else {
+      $('sid').hidden = false; $('sidlist').hidden = true; $('copy').hidden = false;
+      $('sid').textContent = ids[0];
+      $('env').textContent = 'SESSION_ID=' + ids[0];
+    }
+
+    var url = b.bundle || ('/api/bundle/' + batch + '/index.js');
+    if ($('dl').getAttribute('href') !== url) $('dl').setAttribute('href', url);
+    $('dl').hidden = false;
+    $('dlwait').hidden = true;
+    $('dlhint').textContent = ids.length > 1
+      ? 'This file already has both session IDs inside it. Upload it on a fresh panel, start it, and both bots log in by themselves.'
+      : 'This file already has your session ID inside it. Upload it on a fresh panel, start it, and the bot logs in by itself.';
+
+    dmNote(b.dm);
+    dmPolls++;
+    idStart(b.idSecondsLeft);
+    // keep watching (more slowly) so the countdown and the expiry stay right
+    if (!slowPoll) { slowPoll = true; stop(); poll = setInterval(check, 4000); }
+  }
+
   function dmNote(dm) {
+    if (ids.length > 1) {
+      $('dm').textContent = dm === true ? 'A copy of each ID was also sent to that WhatsApp (in your own chat).'
+        : dm === false ? 'We could not message you on WhatsApp, so copy the IDs from here.'
+        : 'Sending a copy to your WhatsApp…';
+      return;
+    }
     $('dm').textContent = dm === true ? 'A copy was also sent to your WhatsApp (in your own chat).'
       : dm === false ? 'We could not message you on WhatsApp, so copy the ID from here.'
       : 'Sending a copy to your WhatsApp…';
   }
 
-  $('cancel').addEventListener('click', function () { var old = job; if (old) fetch('/api/cancel/' + old, { method: 'POST' }).catch(function () {}); reset(); });
+  $('cancel').addEventListener('click', function () { var old = batch || job; if (old) fetch('/api/cancel/' + old, { method: 'POST' }).catch(function () {}); reset(); });
   $('again').addEventListener('click', reset);
   $('copycode').addEventListener('click', function () { if (lastCode) copy(lastCode.replace(/-/g, ''), $('copycode'), $('copycode').querySelector('span')); });
   $('copy').addEventListener('click', function () { copy($('sid').textContent, $('copy'), $('copy-text')); });
@@ -516,8 +695,10 @@
   (function () {
     var saved = null;
     try { saved = JSON.parse(sessionStorage.getItem(JOBKEY) || 'null'); } catch (e) { saved = null; }
-    if (saved && typeof saved.job === 'string' && /^[\w-]{4,64}$/.test(saved.job)) {
-      job = saved.job; restoring = true;
+    var savedId = saved && (saved.batch || saved.job);
+    if (saved && typeof savedId === 'string' && /^[\w-]{4,64}$/.test(savedId)) {
+      job = saved.job || null; batch = saved.batch || null; restoring = true;
+      setDevices(saved.devices === 2 ? 2 : 1, true);
       setMethod(saved.method === 'qr' ? 'qr' : 'code');
       $('pane-code').hidden = method !== 'code'; $('pane-qr').hidden = method !== 'qr';
       $('status').textContent = 'Picking up where you left off…';

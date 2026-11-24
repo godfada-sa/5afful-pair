@@ -129,6 +129,14 @@
       </p>
 
       <form id="form" novalidate>
+        <div class="dsel" id="dsel" role="radiogroup" aria-label="How many numbers are you linking?">
+          <button type="button" class="dopt on" data-n="1" role="radio" aria-checked="true">
+            <b>1 number</b><span>One bot</span>
+          </button>
+          <button type="button" class="dopt" data-n="2" role="radio" aria-checked="false">
+            <b>2 numbers</b><span>Two bots</span>
+          </button>
+        </div>
         <div class="collapse" id="numwrap">
          <div class="inner">
           <label for="number">WhatsApp number</label>
@@ -141,6 +149,18 @@
           </div>
           <p id="numhint" class="hint" aria-live="polite"><span id="ccount">Choose your country, then type your number without the country code.</span></p>
           <p id="numerr" class="err" role="alert" hidden></p>
+         </div>
+        </div>
+
+        <div class="collapse off" id="numwrap2">
+         <div class="inner">
+          <label for="number2">Second WhatsApp number</label>
+          <div class="phone" id="phone2">
+            <span class="cpick ro" id="cpick2" aria-hidden="true"><span class="cflag" id="cflag2">🌍</span><span class="cdial" id="cdial2">+</span></span>
+            <input id="number2" name="number2" type="tel" inputmode="tel" autocomplete="tel-national" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="801 234 5678" maxlength="24" aria-describedby="numhint2 numerr2">
+          </div>
+          <p id="numhint2" class="hint" aria-live="polite">Same country as the first number.</p>
+          <p id="numerr2" class="err" role="alert" hidden></p>
          </div>
         </div>
 
@@ -201,21 +221,26 @@
     <div class="ok" aria-hidden="true"><svg viewBox="0 0 52 52" width="64" height="64"><circle cx="26" cy="26" r="24" fill="none" stroke="#34d399" stroke-width="1.5"/><path class="tick" d="M15 27l8 8 14-16" fill="none" stroke="#34d399" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
     <h2 class="center">Linked successfully</h2>
     <p class="usedmsg" id="usedmsg" role="status" hidden><b>Your bot is logged in.</b> You can close this page. The ID stays valid until it expires.</p>
-    <p class="label">Your session ID</p>
+    <p class="label" id="sidlabel">Your session ID</p>
     <div class="sid" id="sid" role="button" tabindex="0" aria-label="Session ID. Tap to copy"></div>
+    <div class="sidlist" id="sidlist" hidden></div>
     <button id="copy" class="cta" type="button"><span id="copy-text">Copy session ID</span></button>
     <p class="dm" id="dm" aria-live="polite">Sending a copy to your WhatsApp…</p>
 
     <div class="use">
-      
-      <ol class="steps">
-        <li><span class="n">1</span><span>Add this to your bot</span></li>
+      <p class="use-h">Your index.js</p>
+      <p class="hint dlhint" id="dlhint">This file already has your session ID inside it. Upload it on a fresh panel, start it, and the bot logs in by itself.</p>
+      <a id="dl" class="cta dl" href="#" download="index.js" hidden>
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span id="dl-text">Download index.js</span>
+      </a>
+      <p class="hint center" id="dlwait" aria-live="polite">Building your index.js…</p>
+
+      <ol class="steps after">
+        <li><span class="n">1</span><span>Or paste the ID into <b>session_id.txt</b></span></li>
       </ol>
       <pre id="env"></pre>
       <button id="copyenv" class="ghost" type="button"><span>Copy setting</span></button>
-      <ol class="steps after">
-        <li><span class="n">2</span><span>Start the bot</span></li>
-      </ol>
     </div>
     <p class="hint warn">Expires in 5 minutes · keep it private</p>
     <p class="hint center idtimer" id="idtimer" aria-live="off"></p>
@@ -235,7 +260,7 @@
     <details class="qa"><summary>Code or QR expired?</summary><div class="ans"><p>They only last a few minutes. Tap <b>Try again</b> for a new one.</p></div></details>
     <details class="qa"><summary>Which method should I use?</summary><div class="ans"><p>Code if WhatsApp is on this phone. QR if this page is on another screen.</p></div></details>
   </section>
-  <p class="fine helpline" id="faq">Need help? <a href="https://t.me/+7PwU2Vo9czE1NTRk" target="_blank" rel="noopener noreferrer">Ask on Telegram</a> · <a href="#">Privacy</a></p>
+  <p class="fine helpline" id="faq">Need help? <a href="https://t.me/saf_ful" target="_blank" rel="noopener noreferrer">Ask on Telegram</a> · <a href="#">Privacy</a></p>
   <p class="warnline">5AFFUL uses an unofficial WhatsApp Web connection. Use a spare number if you can.</p>
 </div></section>
 </main>
