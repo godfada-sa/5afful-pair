@@ -70,7 +70,7 @@ test('a pairing code job turns into a session ID the bot can download', async ()
 
     const job = await waitLinked(site.base, created.body.job);
     assert.strictEqual(job.state, 'linked');
-    assert.match(job.sessionId, /^TFX-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+    assert.match(job.sessionId, /^5AFFUL-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
     assert.ok(job.idSecondsLeft > 0 && job.idSecondsLeft <= 300);
 
     const first = await fetch(`${site.base}/api/session/${encodeURIComponent(job.sessionId)}`);
@@ -89,14 +89,29 @@ test('a pairing code job turns into a session ID the bot can download', async ()
   }
 });
 
-test('a hand-typed ID (lowercase, no dashes, no TFX) still works', async () => {
+test('a hand-typed ID (lowercase, no dashes, no 5AFFUL) still works', async () => {
   const site = await start(linkedConnector(CREDS_A));
   try {
     const created = await pair(site.base, { method: 'code', number: '27821234567' });
     const job = await waitLinked(site.base, created.body.job);
-    const sloppy = job.sessionId.replace(/^TFX-/, '').replace(/-/g, '').toLowerCase();
+    const sloppy = job.sessionId.replace(/^5AFFUL-/, '').replace(/-/g, '').toLowerCase();
 
     const res = await fetch(`${site.base}/api/session/${encodeURIComponent(sloppy)}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual((await res.json()).me.id, CREDS_A.me.id);
+  } finally {
+    await site.close();
+  }
+});
+
+test('a code from before the change (old TFX prefix) still downloads', async () => {
+  const site = await start(linkedConnector(CREDS_A));
+  try {
+    const created = await pair(site.base, { method: 'code', number: '27821234567' });
+    const job = await waitLinked(site.base, created.body.job);
+    const old = job.sessionId.replace(/^5AFFUL-/, 'TFX-');
+
+    const res = await fetch(`${site.base}/api/session/${encodeURIComponent(old)}`);
     assert.strictEqual(res.status, 200);
     assert.strictEqual((await res.json()).me.id, CREDS_A.me.id);
   } finally {
@@ -107,7 +122,7 @@ test('a hand-typed ID (lowercase, no dashes, no TFX) still works', async () => {
 test('unknown and malformed IDs are 404, never 200 or a redirect', async () => {
   const site = await start(linkedConnector(CREDS_A));
   try {
-    for (const id of ['TFX-UNKNOWN-0000-0000', 'not-an-id', 'TFX-AAAA-BBBB-CCCC']) {
+    for (const id of ['5AFFUL-UNKNOWN-0000-0000', 'not-an-id', '5AFFUL-AAAA-BBBB-CCCC', 'TFX-AAAA-BBBB-CCCC']) {
       const res = await fetch(`${site.base}/api/session/${encodeURIComponent(id)}`, { redirect: 'manual' });
       assert.strictEqual(res.status, 404, id);
     }

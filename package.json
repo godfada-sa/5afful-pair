@@ -2,7 +2,7 @@
   "name": "5afful-pair-site",
   "version": "1.0.0",
   "private": true,
-  "description": "Self-hosted WhatsApp pairing site: links a number with a pairing code or QR code and issues one-use TFX session IDs for the bot",
+  "description": "Self-hosted WhatsApp pairing site: links a number with a pairing code or QR code and issues one-use 5AFFUL session IDs for the bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

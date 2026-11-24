@@ -193,7 +193,7 @@ function createServer({ connector = whatsappConnector, log = console.log, sessio
         } catch (err) {
           raw = '';
         }
-        // canonical() handles lowercase, missing dashes and a missing TFX prefix
+        // canonical() handles lowercase, missing dashes and a missing or old prefix
         const got = vault.read(raw);
         if (got.status !== 200) return sendJson(res, 404, { error: 'unknown or expired session ID' });
         log(`[pair] session downloaded (${mask(got.id)})`);
