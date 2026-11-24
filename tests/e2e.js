@@ -175,8 +175,9 @@ async function part2() {
     execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe' });
     const block = file.match(/const SESSION_IDS = `\n([\s\S]*?)`;/);
     assert.ok(block, 'the SESSION_IDS block is intact');
-    const inside = block[1].split('\n').map((l) => l.trim()).filter(Boolean);
+    const inside = block[1].split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('//'));
     assert.deepStrictEqual(inside, status.sessionIds);
+    assert.ok(!file.includes('//put device 2 session here'), 'two devices: the empty slot comment is gone');
     fs.unlinkSync(tmp);
     ok('node --check accepts it and SESSION_IDS holds exactly the two IDs');
 
@@ -202,9 +203,10 @@ async function part2() {
     const oneFile = await (await fetch(base + one.bundle)).text();
     const oneBlock = oneFile.match(/const SESSION_IDS = `\n([\s\S]*?)`;/);
     assert.ok(oneBlock, 'the SESSION_IDS block is intact');
-    const oneInside = oneBlock[1].split('\n').map((l) => l.trim()).filter(Boolean);
+    const oneInside = oneBlock[1].split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('//'));
     assert.deepStrictEqual(oneInside, one.sessionIds);
-    ok('one number produces a file with exactly one ID');
+    assert.match(oneFile, /\/\/put device 2 session here/, 'the one comment that marks where device 2 goes');
+    ok('one number produces a file with exactly one ID and the device 2 comment');
   } finally {
     await new Promise((resolve) => app.server.close(resolve));
   }

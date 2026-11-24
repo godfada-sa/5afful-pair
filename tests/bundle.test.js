@@ -19,13 +19,23 @@ test('the template has the marker exactly once', () => {
   assert.match(text, /const SESSION_IDS = `\n__5AFFUL_SESSION_IDS__\n`;/);
 });
 
-test('one ID goes into the SESSION_IDS block', () => {
+test('one ID goes into the SESSION_IDS block, with the one comment for device 2', () => {
   const out = renderIndex({ ids: [A] });
   assert.ok(!out.includes(MARKER));
-  assert.match(out, /const SESSION_IDS = `\n {2}5AFFUL-K7M2-9QXA-4BNP\n`;/);
+  assert.match(out, /const SESSION_IDS = `\n {2}5AFFUL-K7M2-9QXA-4BNP\n {2}\/\/put device 2 session here\n`;/);
   // the installer itself is untouched
   assert.match(out, /function startBot\(\)/);
-  assert.match(out, /node index\.js --update/);
+  assert.match(out, /process\.argv\.includes\('--update'\)/);
+});
+
+test('the top of the file is code, not a wall of comments', () => {
+  for (const ids of [[A], [A, B]]) {
+    const out = renderIndex({ ids });
+    const head = out.split('const SESSION_IDS')[0];
+    assert.ok(!head.includes('//'), 'no comment line before the SESSION_IDS block');
+    assert.match(head, /^#!\/usr\/bin\/env node\n'use strict';\n\n$/);
+    assert.strictEqual((out.match(/\/\/put device 2 session here/g) || []).length, ids.length === 1 ? 1 : 0);
+  }
 });
 
 test('two IDs go in on two lines, in the order they were paired', () => {
